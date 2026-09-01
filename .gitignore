@@ -1,0 +1,11 @@
+# Never commit a real local config — it holds machine paths.
+scripts/blackbox.conf
+
+# Never commit transcripts.
+full-session-logs/
+
+.env
+.env.*
+!.env.example
+*.zip
+.DS_Store

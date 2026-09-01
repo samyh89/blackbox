@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# bb — blackbox launcher wrapper.
+#
+# For harnesses that have NO session lifecycle hooks. Launch the agent through
+# this wrapper and the transcript is captured when it exits, however it exits:
+#
+#   ./scripts/bb codex
+#   ./scripts/bb my-agent --flag
+#
+# Harnesses that DO have hooks should register backup-session.sh as a hook
+# instead; this wrapper is the fallback, not the preferred path.
+
+set -uo pipefail
+BB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# EXIT covers normal quit and crashes; INT/TERM cover Ctrl-C and kills, which is
+# exactly when a transcript is most worth having. A signal fires its own trap and
+# then EXIT, so guard against capturing twice.
+bb_capture() {
+  [ -n "${BB_CAPTURED:-}" ] && return 0
+  BB_CAPTURED=1
+  bash "$BB_DIR/backup-session.sh" </dev/null
+}
+trap bb_capture EXIT INT TERM
+
+if [ $# -eq 0 ]; then
+  echo "usage: ./scripts/bb <agent-command> [args...]" >&2
+  exit 2
+fi
+
+"$@"

@@ -1,0 +1,23 @@
+# blackbox local config — where THIS machine's coding agent stores transcripts.
+# Copy to blackbox.conf. Written at install time by the installing agent.
+# Machine-specific: Git-ignored, never committed.
+
+# Label for the harness (free text, used in messages).
+BLACKBOX_AGENT="your-harness"
+
+# Directory holding this project's session transcripts. VERIFY IT — list the
+# directory and confirm a file grows as your session continues. Do not guess.
+BLACKBOX_TRANSCRIPT_DIR="$HOME/.your-harness/sessions"
+
+# Filename pattern for transcripts in that directory.
+BLACKBOX_TRANSCRIPT_GLOB="*.jsonl"
+
+# auto | always | never — filter a shared store by project path.
+# Use "always" when one directory holds transcripts for many projects.
+BLACKBOX_MATCH_PROJECT="auto"
+
+# on | manual — the user's capture choice, asked once at setup.
+#   on     automatic capture is wired up and allowed to fire
+#   manual scripts installed, nothing runs unless you ask:
+#          bash scripts/backup-session.sh --now
+BLACKBOX_CAPTURE="on"
