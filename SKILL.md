@@ -1,6 +1,7 @@
 ---
 name: blackbox
-description: Bootstraps a small, agent-agnostic project baseline - Git, README, universal agent instructions, changelog, decisions log, work logs - plus a session-log black box that captures each coding session's full transcript into a Git-ignored folder and can restore it into the agent's transcript store after the agent has pruned it. Use when creating or bootstrapping an important project folder, or when adding session-log capture and recovery to an existing one.
+description: >-
+  Bootstraps a small, agent-agnostic project baseline - Git, README, universal agent instructions, changelog, decisions log, work logs - plus a session-log black box that captures each coding session's full transcript into a Git-ignored folder and can restore it into the agent's transcript store after the agent has pruned it. Use when creating or bootstrapping an important project folder, or when adding session-log capture and recovery to an existing one.
 ---
 
 # blackbox - Project Logging Helper / Memory layer & logger.
@@ -392,12 +393,30 @@ Reference points only — **verify before use**, they change between versions:
   and `SessionEnd` hooks in `.claude/settings.json`, and passes `transcript_path`
   on stdin. Retention: `cleanupPeriodDays` in `~/.claude/settings.json`
   (defaults to 30 days — raise it).
-- **Codex** — rollout files under `~/.codex/sessions/`, in dated subdirectories
-  and shared across projects, so set `BLACKBOX_MATCH_PROJECT="always"` and
-  `BLACKBOX_TRANSCRIPT_GLOB="rollout-*.jsonl"`. Codex has a hook system with a
-  trust model (see `--dangerously-bypass-hook-trust`); confirm the current event
-  names and config schema from Codex's own documentation at install time, and fall
-  back to `scripts/bb` if you cannot register a session-end hook.
+- **Codex** — verified against codex-cli 0.141.0. Rollout files live under
+  `~/.codex/sessions/YYYY/MM/DD/rollout-<iso>-<uuid>.jsonl`, shared across all
+  projects, so set `BLACKBOX_MATCH_PROJECT="always"` and
+  `BLACKBOX_TRANSCRIPT_GLOB="rollout-*.jsonl"`, and point
+  `BLACKBOX_TRANSCRIPT_DIR` at `~/.codex/sessions` (the root, not a dated
+  subdirectory — restore rebuilds the dated path itself).
+
+  Use `scripts/bb`. Codex's hook events (`Stop` among them) are real and use the
+  same `{"hooks":{"<Event>":[{"hooks":[{"type":"command","command":"..."}]}]}}`
+  schema as Claude Code, but in 0.141.0 they are delivered through *plugins* from
+  a marketplace, behind a trust model. A project-level `.codex/hooks.json` was
+  tested and did not fire. The wrapper works:
+
+  ```sh
+  ./scripts/bb codex </dev/null
+  ```
+
+  Redirect stdin. `codex` reads stdin when it is not a TTY and will wait forever
+  on an open pipe that nobody writes to.
+
+  Codex also keeps a SQLite index of rollouts alongside the files. Deleting a
+  rollout leaves a stale row (`codex doctor` reports "state DB rows point at
+  missing or unusable rollout files"); restoring the file clears it and the
+  session resumes normally. Both were verified end to end.
 - **Anything else** — discover it with step 1. Use hooks if the runtime has them,
   `scripts/bb` if it does not. The wrapper needs no knowledge of the runtime at
   all, so there is always a working route.
@@ -489,6 +508,24 @@ If yes:
 
 Do not create public repositories unless the user explicitly asks.
 
+## Frontmatter
+
+Write the skill's own frontmatter defensively - other harnesses parse it with a
+strict YAML parser, and one that fails to parse does not load at all:
+
+```yaml
+---
+name: blackbox
+description: >-
+  One or more sentences. Use a block scalar so a colon, quote, or line break
+  in the text can never break the parse.
+---
+```
+
+A bare `key: value: value` on one unquoted line is a parse error, and the whole
+skill is silently unavailable. This is a real failure that was observed in the
+wild, not a hypothetical.
+
 ## Common Mistakes
 
 - Do not create `tasks/` by default.
@@ -503,6 +540,8 @@ Do not create public repositories unless the user explicitly asks.
   `BLACKBOX_CAPTURE` is set in `blackbox.conf`.
 - Do not report a capture mode you did not actually configure.
 - Do not go a whole session without offering a commit.
+- Do not write an unquoted frontmatter `description` containing a colon; use a
+  `>-` block scalar. A strict YAML parser rejects it and the skill never loads.
 - Do not hardcode a transcript path into a script; put it in `blackbox.conf`.
 - Do not install capture without also raising the runtime's retention setting;
   backups you cannot resume are only half a black box.

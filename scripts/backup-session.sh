@@ -92,6 +92,10 @@ if ! cp -f "$transcript" "$BB_DEST/$(basename "$transcript")" 2>/dev/null; then
   exit 0
 fi
 
+# Remember where it came from, so restore can rebuild the harness's own layout
+# (dated subdirectories, etc.) rather than dumping everything in the store root.
+bb_record_path "$transcript" "${BLACKBOX_TRANSCRIPT_DIR:-}"
+
 bb_write_manifest "$BB_DEST"
 bb_warn "backup: saved $(basename "$transcript") -> full-session-logs/"
 exit 0

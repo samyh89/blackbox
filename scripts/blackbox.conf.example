@@ -21,3 +21,32 @@ BLACKBOX_MATCH_PROJECT="auto"
 #   manual scripts installed, nothing runs unless you ask:
 #          bash scripts/backup-session.sh --now
 BLACKBOX_CAPTURE="on"
+
+
+# --- Worked example: Claude Code -----------------------------------------
+# Per-project store, so no filtering needed. Has real session hooks.
+#
+#   BLACKBOX_AGENT="claude-code"
+#   BLACKBOX_TRANSCRIPT_DIR="$HOME/.claude/projects/<project-path-slug>"
+#   BLACKBOX_TRANSCRIPT_GLOB="*.jsonl"
+#   BLACKBOX_MATCH_PROJECT="auto"
+#
+# The slug is the project path with non-alphanumerics replaced by "-".
+# Also raise retention: "cleanupPeriodDays" in ~/.claude/settings.json
+# (unset defaults to 30 days).
+
+# --- Worked example: Codex (verified against codex-cli 0.141.0) ----------
+# Codex shares ONE transcript store across every project and files rollouts
+# under sessions/YYYY/MM/DD/. Point at the ROOT; restore rebuilds the dated
+# path from the index blackbox keeps.
+#
+#   BLACKBOX_AGENT="codex"
+#   BLACKBOX_TRANSCRIPT_DIR="$HOME/.codex/sessions"
+#   BLACKBOX_TRANSCRIPT_GLOB="rollout-*.jsonl"
+#   BLACKBOX_MATCH_PROJECT="always"
+#   BLACKBOX_CAPTURE="on"
+#
+# Codex has no user-registerable session hook yet, so launch it via the
+# wrapper, with stdin redirected (codex waits on a non-TTY stdin):
+#
+#   ./scripts/bb codex </dev/null

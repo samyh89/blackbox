@@ -26,7 +26,7 @@ Put this folder where your agent looks for skills, then tell the agent to use it
 | Harness | Location |
 | --- | --- |
 | Claude Code | `~/.claude/skills/blackbox/` |
-| Codex | wherever your Codex build reads instruction bundles from |
+| Codex | `~/.codex/skills/blackbox/` (or the shared `~/.agents/skills/blackbox/`) |
 | Anything else | your harness's skill/instruction directory |
 
 Then, in the project you want set up:
@@ -83,6 +83,42 @@ hook registered — ask your agent to do it.
 can always be put back.
 
 ---
+
+## Codex
+
+Verified end to end against codex-cli 0.141.0 — capture, prune, restore, resume.
+
+Codex has no user-registerable session hook yet (its hook events are real, but in
+0.141.0 they ship through marketplace plugins behind a trust model; a project
+`.codex/hooks.json` was tested and does not fire). So Codex uses the wrapper:
+
+```sh
+./scripts/bb codex </dev/null
+```
+
+**Redirect stdin.** `codex` reads stdin whenever it is not a TTY and will wait
+forever on an open pipe. This is a Codex behaviour, not a blackbox one, but it
+will look like a hang if you skip it.
+
+Config for Codex:
+
+```sh
+BLACKBOX_AGENT="codex"
+BLACKBOX_TRANSCRIPT_DIR="$HOME/.codex/sessions"
+BLACKBOX_TRANSCRIPT_GLOB="rollout-*.jsonl"
+BLACKBOX_MATCH_PROJECT="always"    # one store shared by every project
+BLACKBOX_CAPTURE="on"
+```
+
+Point `BLACKBOX_TRANSCRIPT_DIR` at the `sessions` root, not a dated
+subdirectory. Codex files rollouts under `sessions/YYYY/MM/DD/`, and blackbox
+records where each one came from so restore rebuilds that layout instead of
+dumping into the root.
+
+One Codex-specific detail worth knowing: it keeps a SQLite index of rollouts
+next to the files. Delete a rollout and `codex doctor` starts reporting *"state
+DB rows point at missing or unusable rollout files"*. Restoring the file clears
+that and the session resumes normally — both verified.
 
 ## Recovering a lost session
 
@@ -215,9 +251,6 @@ scripts/               the black box itself
 | `bb` | Launcher wrapper, for runtimes with no hooks: `./scripts/bb <agent>`. |
 | `blackbox.conf` | Your machine's paths and capture mode. Git-ignored. |
 
-The agent writes `blackbox.conf` for you at setup. `scripts/blackbox.conf.example`
-in this repo documents every field if you'd rather write it by hand.
-
 `logs/` and `full-session-logs/` are different things. `logs/` holds short
 summaries an agent writes for the next agent, and is committed.
 `full-session-logs/` holds raw conversation dumps, and never is.
@@ -260,11 +293,8 @@ directory across projects. Set `BLACKBOX_MATCH_PROJECT="always"`.
 
 **Restore says the file exists** — it won't overwrite. Use `--force`.
 
+**Codex seems to hang under `./scripts/bb`** — add `</dev/null`. Codex reads
+stdin when it is not a TTY.
+
 **MANIFEST prompts show `-`** — install `jq` for accurate parsing. The fallback
 degrades to `-` rather than guessing wrong.
-
----
-
-## License
-
-MIT. See [LICENSE](LICENSE).

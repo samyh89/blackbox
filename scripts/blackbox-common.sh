@@ -25,6 +25,11 @@ bb_project_dir() {
 BB_PROJECT_DIR="$(bb_project_dir)"
 BB_DEST="$BB_PROJECT_DIR/full-session-logs"
 BB_CONF="$BB_PROJECT_DIR/scripts/blackbox.conf"
+# Sidecar map of "filename -> directory it came from, relative to the store root".
+# Harnesses that file transcripts under dated subdirectories (Codex uses
+# sessions/YYYY/MM/DD/) need the original layout rebuilt on restore, not a flat
+# dump into the store root. Lives inside full-session-logs/, so it is Git-ignored.
+BB_INDEX="$BB_DEST/.blackbox-paths"
 
 # --- Local config ---------------------------------------------------------
 # blackbox.conf records where THIS machine's harness keeps transcripts. It is
@@ -99,8 +104,20 @@ bb_newest_transcript() {
 # It lives inside full-session-logs/ and is therefore Git-ignored like the rest,
 # because first prompts can contain private detail.
 
-bb_first_timestamp() { grep -om1 '"timestamp":"[^"]*"' "$1" 2>/dev/null | sed 's/.*:"//; s/"$//'; }
+# `grep -o -m1` stops after the first matching LINE but still prints every match
+# ON that line, and some harnesses (Codex) put two "timestamp" fields on line one.
+# Always collapse to a single value, or the manifest table gains a stray row.
+bb_first_timestamp() { grep -om1 '"timestamp":"[^"]*"' "$1" 2>/dev/null | head -n1 | sed 's/.*:"//; s/"$//'; }
 bb_last_timestamp()  { grep -o  '"timestamp":"[^"]*"' "$1" 2>/dev/null | tail -n1 | sed 's/.*:"//; s/"$//'; }
+
+# Make any value safe for one Markdown table cell: first line only, no pipes,
+# no newlines, bounded length. A blank value renders as "-".
+bb_cell() {
+  local v
+  v="$(printf '%s' "${1:-}" | tr -d '\r' | head -n1 | tr '|' '/' | cut -c1-"${2:-100}")"
+  [ -n "$v" ] || v="-"
+  printf '%s' "$v"
+}
 
 # Best-effort first user prompt. Transcript schemas differ per harness, so try a
 # few shapes and degrade to "-" rather than guessing wrong.
@@ -152,16 +169,50 @@ bb_write_manifest() {
   while IFS= read -r f; do
     [ -n "$f" ] && [ -f "$f" ] || continue
     printf '| `%s` | %s | %s | %s | %s |\n' \
-      "$(basename "$f")" \
-      "$(bb_first_timestamp "$f" | cut -c1-19)" \
-      "$(bb_last_timestamp  "$f" | cut -c1-19)" \
-      "$(du -h "$f" 2>/dev/null | cut -f1)" \
-      "$(bb_first_prompt "$f")" >> "$tmp"
+      "$(bb_cell "$(basename "$f")")" \
+      "$(bb_cell "$(bb_first_timestamp "$f")" 19)" \
+      "$(bb_cell "$(bb_last_timestamp  "$f")" 19)" \
+      "$(bb_cell "$(du -h "$f" 2>/dev/null | cut -f1)")" \
+      "$(bb_cell "$(bb_first_prompt "$f")")" >> "$tmp"
     n=$((n + 1))
   done < <(find "$dest" -maxdepth 1 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null \
            | sort -rn | cut -d' ' -f2-)
 
   { echo; echo "$n session(s) backed up."; } >> "$tmp"
   mv -f "$tmp" "$dest/MANIFEST.md" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  return 0
+}
+
+# --- Original-location index ---------------------------------------------
+# bb_record_path <transcript-abs-path> [store-root]
+# Records the transcript's directory relative to the store root, so restore can
+# put it back where the harness expects it. A transcript sitting directly in the
+# store root records an empty path and restores flat, as before.
+bb_record_path() {
+  local src="${1:-}" root="${2:-}" base rel dir
+  [ -n "$src" ] || return 0
+  base="$(basename "$src")"
+  dir="$(cd "$(dirname "$src")" 2>/dev/null && pwd)" || return 0
+  root="${root/#\~/$HOME}"
+  [ -n "$root" ] && root="$(cd "$root" 2>/dev/null && pwd)"
+  if [ -n "$root" ] && [ "$dir" != "$root" ] && [ "${dir#"$root"/}" != "$dir" ]; then
+    rel="${dir#"$root"/}"
+  else
+    rel=""
+  fi
+  mkdir -p "$(dirname "$BB_INDEX")" 2>/dev/null || return 0
+  # Rewrite any previous entry for this file, then append the current one.
+  if [ -f "$BB_INDEX" ]; then
+    grep -v -- "^$base	" "$BB_INDEX" > "$BB_INDEX.tmp" 2>/dev/null
+    mv -f "$BB_INDEX.tmp" "$BB_INDEX" 2>/dev/null || rm -f "$BB_INDEX.tmp" 2>/dev/null
+  fi
+  printf '%s\t%s\n' "$base" "$rel" >> "$BB_INDEX" 2>/dev/null
+  return 0
+}
+
+# bb_lookup_path <basename> — prints the recorded relative directory, if any.
+bb_lookup_path() {
+  [ -f "$BB_INDEX" ] || return 0
+  grep -m1 -- "^${1}	" "$BB_INDEX" 2>/dev/null | cut -f2-
   return 0
 }

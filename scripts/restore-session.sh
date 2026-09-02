@@ -28,6 +28,7 @@ bb_load_conf
 
 target=""
 dest_dir=""
+explicit_dest=""
 do_all=0
 force=0
 
@@ -43,7 +44,7 @@ while [ $# -gt 0 ]; do
       exit 0 ;;
     --all|-a)   do_all=1; shift ;;
     --force|-f) force=1; shift ;;
-    --to)       dest_dir="${2:-}"; shift 2 ;;
+    --to)       dest_dir="${2:-}"; explicit_dest=1; shift 2 ;;
     -h|--help)  sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)         bb_warn "unknown option: $1"; exit 2 ;;
     *)          target="$1"; shift ;;
@@ -95,14 +96,33 @@ restored=0
 skipped=0
 for src in "${sources[@]}"; do
   base="$(basename "$src")"
-  if [ -e "$dest_dir/$base" ] && [ "$force" -eq 0 ]; then
+
+  # Put it back where the harness filed it. Codex nests transcripts under
+  # sessions/YYYY/MM/DD/; a flat restore into the store root can still be found
+  # by some harnesses, but it leaves the store inconsistent with its own layout.
+  # An explicit --to always wins, and an unknown file restores flat as before.
+  rel=""
+  [ -z "$explicit_dest" ] && rel="$(bb_lookup_path "$base")"
+  if [ -n "$rel" ]; then
+    target_dir="$dest_dir/$rel"
+    mkdir -p "$target_dir" 2>/dev/null || target_dir="$dest_dir"
+  else
+    target_dir="$dest_dir"
+  fi
+
+  # A transcript already present ANYWHERE under the store counts as present,
+  # so we never create a second copy at a different depth.
+  existing="$(find "$dest_dir" -type f -name "$base" -print -quit 2>/dev/null)"
+  if [ -n "$existing" ] && [ "$force" -eq 0 ]; then
     bb_warn "skip $base (already in store; use --force to overwrite)"
     skipped=$((skipped + 1))
     continue
   fi
-  if cp -f "$src" "$dest_dir/$base" 2>/dev/null; then
-    touch "$dest_dir/$base" 2>/dev/null   # restart the retention clock
-    bb_warn "restored $base -> $dest_dir"
+  [ -n "$existing" ] && [ "$force" -eq 1 ] && target_dir="$(dirname "$existing")"
+
+  if cp -f "$src" "$target_dir/$base" 2>/dev/null; then
+    touch "$target_dir/$base" 2>/dev/null   # restart the retention clock
+    bb_warn "restored $base -> $target_dir"
     restored=$((restored + 1))
   else
     bb_warn "failed to restore $base"
