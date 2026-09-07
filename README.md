@@ -298,3 +298,48 @@ stdin when it is not a TTY.
 
 **MANIFEST prompts show `-`** — install `jq` for accurate parsing. The fallback
 degrades to `-` rather than guessing wrong.
+
+---
+
+## Developing this skill
+
+The repository *is* the skill. Clone it once, then point every harness's skill
+directory at that one checkout with symlinks — edit in one place, and each agent
+picks the change up immediately with no copy step:
+
+```sh
+git clone https://github.com/samyh89/blackbox ~/blackbox
+
+mkdir -p ~/.agents/skills ~/.claude/skills ~/.codex/skills
+ln -s ~/blackbox                      ~/.agents/skills/blackbox
+ln -s ../../.agents/skills/blackbox   ~/.claude/skills/blackbox
+ln -s ../../.agents/skills/blackbox   ~/.codex/skills/blackbox
+```
+
+`~/.agents/skills/` acts as the hub; the harness-specific directories link
+through it, so adding another agent later is one more symlink.
+
+Verify it resolved:
+
+```sh
+readlink -f ~/.claude/skills/blackbox    # -> /home/you/blackbox
+```
+
+Both Claude Code and Codex follow symlinked skill directories (tested against
+codex-cli 0.141.0 — Codex reports skill load errors against the *resolved*
+path). If a harness ever refuses one, copy the directory instead and re-copy
+after each edit.
+
+Publishing is then just `git push`. The extra files in the repo root —
+`LICENSE`, `.gitignore`, `.git/` — are ignored by the harnesses, which only read
+`SKILL.md`.
+
+Note that a project's `scripts/` directory is a **working install**, not a
+checkout: `backup-session.sh` and friends are copied into each project so they
+keep working regardless of what happens to your development clone.
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
